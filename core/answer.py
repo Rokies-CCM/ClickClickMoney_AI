@@ -98,16 +98,15 @@ def _dedup_bullets(bullets: Optional[List[str]]) -> List[str]:
 
 # ---------- public renderers ----------
 def render_answer(core_text: str, bullets: Optional[List[str]] = None, sources: Optional[List[Dict]] = None) -> str:
+    """
+    최종 응답 본문에 '근거 요약'은 붙이지 않고, 필요 시 '[출처]'만 붙인다.
+    """
     core_text = (core_text or "").strip()
     parts: List[str] = []
     if core_text:
         parts.append(core_text)
 
-    clean_bullets = _dedup_bullets(bullets)
-    if clean_bullets:
-        parts.append("\n[근거 요약]")
-        for b in clean_bullets:
-            parts.append(f"- {b}")
+    # 근거 요약(불릿) 섹션은 더 이상 출력하지 않음
 
     if sources:
         parts.append("\n[출처]")
@@ -121,13 +120,13 @@ def render_answer(core_text: str, bullets: Optional[List[str]] = None, sources: 
     return "\n".join(parts).strip()
 
 def render_tail(bullets: Optional[List[str]] = None, sources: Optional[List[Dict]] = None) -> str:
+    """
+    스트리밍/파이널 뒤에 붙는 꼬리 섹션에서 '근거 요약'은 제외하고,
+    '[출처]'만 두 줄 개행 후에 붙인다.
+    """
     parts: List[str] = []
 
-    clean_bullets = _dedup_bullets(bullets)
-    if clean_bullets:
-        parts.append("\n\n[근거 요약]")
-        for b in clean_bullets:
-            parts.append(f"- {b}")
+    # 근거 요약(불릿) 섹션은 더 이상 출력하지 않음
 
     if sources:
         parts.append("\n\n[출처]")
