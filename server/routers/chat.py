@@ -23,7 +23,8 @@ from core.tavily import web_search_snippets, is_tavily_enabled
 from core.rag import build_context
 from core.quant_guard import extract_numbers, sanitize_numbers
 from core.evidence import analyze_question, normalize_citations
-from core.answer import render_answer, render_tail
+# 근거 꼬리 렌더러는 더 이상 사용하지 않으므로 import 제거
+# from core.answer import render_answer, render_tail
 
 try:
     from core.utils import count_tokens  # tiktoken 기반
@@ -85,7 +86,10 @@ def _normalize_host(url: str) -> Optional[str]:
     try:
         u = urlparse(url)
         if u.scheme in ("http", "https") and u.netloc:
-            return u.netloc.lower()
+            host = u.netloc.lower()
+            if host.startswith("www."):
+                host = host[4:]
+            return host
     except Exception:
         return None
     return None
@@ -215,6 +219,53 @@ def _filter_sources(sources: List[Dict], limit: Optional[int], public_only: bool
     if limit:
         return picked[:limit]
     return picked
+
+# -------------- 출처 버튼 생성 유틸 --------------
+def _norm_button_title(t: str, max_len: int = 80) -> str:
+    if not t:
+        return ""
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) > max_len:
+        t = t[: max_len - 1].rstrip() + "…"
+    return t
+
+def _ensure_http(url: str) -> str:
+    if not url:
+        return url
+    if re.match(r"^https?://", url, re.IGNORECASE):
+        return url
+    return "https://" + url
+
+def _build_source_buttons(passages_used: List[Dict], limit: Optional[int], public_only: bool) -> List[Dict]:
+    """
+    passages_used를 기반으로 dedup + host 필터 반영한 버튼 목록 생성.
+    반환: [{title, url, host}]
+    """
+    try:
+        _, uniq_sources = normalize_citations(passages_used or [], max_sources=(limit or cfg.MAX_SOURCES))
+    except Exception:
+        uniq_sources = []
+
+    uniq_sources = _filter_sources(uniq_sources, limit=limit, public_only=public_only)
+
+    buttons: List[Dict] = []
+    seen_urls: Set[str] = set()
+
+    for s in uniq_sources:
+        url = _ensure_http((s.get("url") or "").strip())
+        if not url:
+            continue
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        host = _normalize_host(url) or (s.get("site") or "").lower()
+        title = _norm_button_title(s.get("title") or s.get("name") or s.get("url") or host or "출처")
+        buttons.append({"title": title, "url": url, "host": host})
+
+        if limit and len(buttons) >= limit:
+            break
+
+    return buttons
 
 # ledger 파생 수치
 import re as _re
@@ -403,7 +454,7 @@ async def chat(req: Request):
 
     # ---------------- Grounding policy ----------------
     need_web, news_like, explicit_src = analyze_question(question_raw)
-    suppress_tail = bool(TAIL_SUPPRESS_RE.search(question_raw))
+    suppress_tail = True  # 본문 꼬리(근거/출처) 완전 억제
     is_smalltalk = bool(SMALLTALK_RE.match(question_raw))
     if domain in {"ledger", "consumption", "invest", "points", "apptech"} and not (news_like or explicit_src):
         need_web = False
@@ -441,6 +492,12 @@ async def chat(req: Request):
             "total_tokens": count_tokens((SYSTEM_PROMPT or "") + (DEVELOPER_PROMPT or "") + question + ctx_cached, model_cached) + count_tokens(answer_cached, model_cached),
         }
 
+        # 버튼 생성 (캐시 결과 기반)
+        try:
+            source_buttons_cached = _build_source_buttons(used_passages_cached, desired_limit, public_only)
+        except Exception:
+            source_buttons_cached = []
+
         if payload.stream:
             async def event_stream_cache():
                 yield f"event: start\ndata: {trace_id}\n\n"
@@ -450,7 +507,8 @@ async def chat(req: Request):
                 meta = {
                     "provider": provider_cached, "model": model_cached,
                     "usage": usage_cached, "context_used": ctx_cached,
-                    "sources": used_passages_cached, "cost_usd_estimate": None,
+                    "sources": used_passages_cached, "source_buttons": source_buttons_cached,
+                    "cost_usd_estimate": None,
                     "from_cache": True,
                 }
                 yield f"event: done\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
@@ -462,6 +520,7 @@ async def chat(req: Request):
             "answer": answer_cached,
             "context_used": ctx_cached,
             "sources": used_passages_cached,
+            "source_buttons": source_buttons_cached,
             "model": model_cached,
             "provider": provider_cached,
             "usage": usage_cached,
@@ -523,7 +582,7 @@ async def chat(req: Request):
                 ctx_used = ctx
                 passages_used = used_passages
 
-                # 품질 보강 재검색: tail 억제 여부와 무관하게 수행 (정확도 우선)
+                # 품질 보강 재검색(본문만): tail 부착과 무관하게 수행
                 if need_web and not is_smalltalk:
                     try:
                         evd0 = compute_evidence_score(ctx_used, final_text)
@@ -553,20 +612,19 @@ async def chat(req: Request):
                     except Exception:
                         pass
 
-                # 꼬리 부착(있으면): suppress_tail이면 부착하지 않음
-                if need_web and not suppress_tail:
-                    bullets, uniq_sources = normalize_citations(passages_used, max_sources=(desired_limit or cfg.MAX_SOURCES))
-                    uniq_sources = _filter_sources(uniq_sources, limit=desired_limit, public_only=public_only)
-                    if uniq_sources:
-                        tail = render_tail(bullets, uniq_sources)
-                        tail_chunk = _sanitize_text_with_numbers(tail, allowed_hosts, allowed_numbers)
-                        final_text = (final_text.rstrip() + tail_chunk)
+                # ✅ 본문 꼬리([출처]/[근거 요약])는 더 이상 붙이지 않음
 
                 # 이미 보낸 본문(early)을 제외한 차이만 송출
                 resend = _compute_delta(sent_parts if stream_early else [], final_text, need_web)
 
                 generation_ms = round((time.monotonic() - t_gen_s) * 1000, 1)
                 usage = _usage_obj(final_text)
+
+                # 버튼 생성
+                try:
+                    source_buttons = _build_source_buttons(passages_used, desired_limit, public_only)
+                except Exception:
+                    source_buttons = []
 
                 # 메트릭/벤치 기록은 실제 사용된 컨텍스트 기준
                 try:
@@ -602,6 +660,7 @@ async def chat(req: Request):
                 meta = {
                     "provider": provider_name, "model": model_name,
                     "usage": usage, "context_used": ctx_used, "sources": passages_used,
+                    "source_buttons": source_buttons,
                     "cost_usd_estimate": round(cost, 6) if cost is not None else None,
                     "from_cache": False,
                 }
@@ -684,7 +743,7 @@ async def chat(req: Request):
     answer = sanitize_body_text(answer)
 
     try:
-        # 품질 보강 재검색은 tail 억제 여부와 무관하게 수행
+        # 품질 보강 재검색(본문만)
         if need_web and not is_smalltalk:
             evd0 = compute_evidence_score(ctx, answer)
 
@@ -704,11 +763,7 @@ async def chat(req: Request):
                 if compute_evidence_score(ctxx, ans2) >= evd0:
                     answer, used_passages, ctx = ans2, usedx, ctxx
 
-            bullets, uniq_sources = normalize_citations(used_passages, max_sources=(desired_limit or cfg.MAX_SOURCES))
-            uniq_sources = _filter_sources(uniq_sources, limit=desired_limit, public_only=public_only)
-            # tail 부착은 suppress_tail이 아닐 때만
-            if uniq_sources and not suppress_tail:
-                answer = render_answer(answer.rstrip(), bullets, uniq_sources)
+            # ✅ 본문 꼬리([출처]/[근거 요약])는 붙이지 않음
     except Exception:
         pass
 
@@ -716,6 +771,12 @@ async def chat(req: Request):
     allowed_hosts = _collect_allowed_hosts(used_passages, ctx or "", client_ctx)
     allowed_numbers = extract_numbers((ctx or "") + " " + " ".join([s.get("text", "") for s in used_passages]) + " " + client_ctx)
     answer = _sanitize_text_with_numbers(answer, allowed_hosts, allowed_numbers)
+
+    # 버튼 생성
+    try:
+        source_buttons_final = _build_source_buttons(used_passages, desired_limit, public_only)
+    except Exception:
+        source_buttons_final = []
 
     usage = {
         "prompt_tokens": count_tokens(sys_p + dev_p + question + (ctx or ""), model_name),
@@ -762,6 +823,7 @@ async def chat(req: Request):
         "answer": answer,
         "context_used": ctx,
         "sources": used_passages,
+        "source_buttons": source_buttons_final,
         "model": model_name,
         "provider": provider_name,
         "usage": usage,
