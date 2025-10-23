@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-.env
-=======
 # Python
 __pycache__/
 *.pyc
@@ -33,4 +30,4 @@ logs/
 # Cache
 .cache/
 huggingface/
->>>>>>> origin/yejin_merge
+
