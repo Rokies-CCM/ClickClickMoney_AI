@@ -438,7 +438,6 @@ async def chat(req: Request):
     domain = (payload.domain or "").lower()
     client_ctx = payload.context or ""
     facts = payload.facts or {}
-
     chat_history = payload.chat_history
 
     if len(chat_history) > MAX_HISTORY_MESSAGES:
@@ -501,12 +500,10 @@ async def chat(req: Request):
             "completion_tokens": count_tokens(answer_cached, model_cached),
             "total_tokens": count_tokens((SYSTEM_PROMPT or "") + (DEVELOPER_PROMPT or "") + question + ctx_cached, model_cached) + count_tokens(answer_cached, model_cached),
         }
-
         updated_history_cached = chat_history + [
             {"role": "user", "content": question},
             {"role": "assistant", "content": answer_cached}
         ]
-
 
         # 버튼 생성 (캐시 결과 기반)
         try:
@@ -526,7 +523,6 @@ async def chat(req: Request):
                     "sources": used_passages_cached, "source_buttons": source_buttons_cached,
                     "cost_usd_estimate": None,
                     "chat_history": updated_history_cached,
-
                     "from_cache": True,
                 }
                 yield f"event: done\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
@@ -619,11 +615,7 @@ async def chat(req: Request):
                                 min_k=cfg.NEWS_MIN_K,
                                 prefer_web_first=True
                             )
-                            
-                            # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                             safer = await model_client.generate(sys_p, dev_p, question, ctx3, chat_history=chat_history)
-                            # --- 병합 충돌 해결 끝 ---
-                            
                             safer = sanitize_body_text(_sanitize_text_with_numbers(safer, _collect_allowed_hosts(used3, ctx3), extract_numbers(ctx3)))
                             _, s3 = normalize_citations(used3, max_sources=cfg.MAX_SOURCES)
                             if (compute_evidence_score(ctx3, safer) >= evd0) or (len(s3) > 0):
@@ -680,22 +672,16 @@ async def chat(req: Request):
                     cost = (usage["total_tokens"] / 1000) * (0.003)
                 except Exception:
                     cost = None
-                
-                # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                 updated_history = chat_history + [
                     {"role": "user", "content": question_raw},
                     {"role": "assistant", "content": final_text}
                 ]
-                # --- 병합 충돌 해결 끝 ---
-
                 meta = {
                     "provider": provider_name, "model": model_name,
                     "usage": usage, "context_used": ctx_used, "sources": passages_used,
                     "source_buttons": source_buttons,
                     "cost_usd_estimate": round(cost, 6) if cost is not None else None,
-                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     "chat_history": updated_history,
-                    # --- 병합 충돌 해결 끝 ---
                     "from_cache": False,
                 }
 
@@ -713,9 +699,7 @@ async def chat(req: Request):
                 yield f"event: start\ndata: {trace_id}\n\n"
                 if stream_early:
                     buf = ""
-                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
-                    # --- 병합 충돌 해결 끝 ---
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -744,9 +728,7 @@ async def chat(req: Request):
                             yield f"data: {safe_tail}\n\n"
                             sent_parts.append(safe_tail + "\n")
                 else:
-                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
-                    # --- 병합 충돌 해결 끝 ---
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -777,11 +759,7 @@ async def chat(req: Request):
 
     # ------------------------ JSON ------------------------
     t_gen_s = time.monotonic()
-    
-    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
     answer = await model_client.generate(sys_p, dev_p, question, ctx, chat_history=chat_history)
-    # --- 병합 충돌 해결 끝 ---
-    
     answer = sanitize_body_text(answer)
 
     try:
@@ -800,11 +778,7 @@ async def chat(req: Request):
                     min_k=cfg.NEWS_MIN_K,
                     prefer_web_first=True
                 )
-                
-                # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                 ans2 = await model_client.generate(sys_p, dev_p, question, ctxx, chat_history=chat_history)
-                # --- 병합 충돌 해결 끝 ---
-
                 ans2 = sanitize_body_text(ans2)
                 if compute_evidence_score(ctxx, ans2) >= evd0:
                     answer, used_passages, ctx = ans2, usedx, ctxx
@@ -864,12 +838,10 @@ async def chat(req: Request):
     except Exception:
         pass
 
-    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
     updated_history = chat_history + [
         {"role": "user", "content": question_raw},
         {"role": "assistant", "content": answer}
     ]
-    # --- 병합 충돌 해결 끝 ---
 
     return JSONResponse(content={
         "trace_id": trace_id,
@@ -880,9 +852,7 @@ async def chat(req: Request):
         "model": model_name,
         "provider": provider_name,
         "usage": usage,
-        # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
         "chat_history": updated_history
-        # --- 병합 충돌 해결 끝 ---
     })
 
 # ------------------------ Utils ------------------------
