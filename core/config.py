@@ -50,6 +50,12 @@ class Settings:
     GOOGLE_API_KEY: Optional[str] = _env_str("GOOGLE_API_KEY")
     TAVILY_API_KEY: Optional[str] = _env_str("TAVILY_API_KEY")
 
+
+    KIWOOM_APP_KEY: Optional[str] = _env_str("KIWOOM_APP_KEY")
+    KIWOOM_APP_SECRET: Optional[str] = _env_str("KIWOOM_APP_SECRET")
+    # --- 모의투자용 키 추가 ---
+    KIWOOM_MOCK_APP_KEY: Optional[str] = _env_str("KIWOOM_MOCK_APP_KEY")
+    KIWOOM_MOCK_APP_SECRET: Optional[str] = _env_str("KIWOOM_MOCK_APP_SECRET")
     # ------------------------------------------------------------------
     # Global/Runtime
     # ------------------------------------------------------------------
