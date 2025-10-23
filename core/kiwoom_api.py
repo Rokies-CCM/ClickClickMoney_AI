@@ -3,8 +3,9 @@ import requests
 import json
 import time
 import logging
+import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Dict, Literal
+from typing import Optional, Tuple, Dict, Literal, List
 from core.config import get_settings
 
 # 로거 설정
@@ -234,6 +235,93 @@ def _call_kiwoom_api(
         log.exception(f"API({api_id}, {env}) 처리 중 예상치 못한 오류 발생: {e}")
         return {"status_code": 500, "error": f"Unexpected server error: {str(e)}", "body": None}
 
+# --- (신규) 종목 정보 리스트 요청 (ka10099) ---
+def get_stock_list(
+    market_type: Literal["0", "10"], # 0: 코스피, 10: 코스닥
+    env: Literal["real", "mock"] = "real",
+    cont_yn: str = 'N',
+    next_key: str = ''
+) -> Optional[dict]:
+    """종목 정보 리스트(ka10099)를 조회합니다. (코스피 또는 코스닥)"""
+    # ka10099 API에 필요한 data 파라미터 구성
+    data = {
+        'mrkt_tp': market_type
+        # 필요 시 다른 ka10099 파라미터 추가 가능 (예: 관리종목 제외 등)
+    }
+    return _call_kiwoom_api(
+        endpoint='/api/dostk/stkinfo', # ka10099 엔드포인트
+        api_id='ka10099',
+        data=data,
+        env=env,
+        cont_yn=cont_yn,
+        next_key=next_key
+    )
+
+# --- (신규) 코스피/코스닥 종목 리스트를 합치고 시가총액으로 정렬하는 헬퍼 함수 ---
+async def get_sorted_market_cap_codes(
+    top_n: int = 50,
+    env: Literal["real", "mock"] = "real"
+) -> Tuple[List[Dict[str, str]], Optional[str]]:
+    """
+    코스피/코스닥 종목 중 시가총액 상위 N개를 조회하여
+    순위, 종목명, 시가총액, 현재가, 전일대비, 등락률, 거래량 정보를 반환합니다.
+    """
+    log.info(f"시가총액 상위 {top_n}개 종목 정보 조회 시작 (환경: {env})")
+
+    try:
+        # 코스피/코스닥 동시 요청 (스레드로 병렬 처리)
+        kospi_task = asyncio.to_thread(get_stock_list, market_type="0", env=env)
+        kosdaq_task = asyncio.to_thread(get_stock_list, market_type="10", env=env)
+        kospi_result, kosdaq_result = await asyncio.gather(kospi_task, kosdaq_task, return_exceptions=True)
+
+        combined_list = []
+        error_messages = []
+
+        # 안전하게 리스트 추출
+        def extract_list(result):
+            if not result or not isinstance(result, dict):
+                return []
+            body = result.get("body", {})
+            items = body.get("list", [])
+            return items if isinstance(items, list) else []
+
+        combined_list.extend(extract_list(kospi_result))
+        combined_list.extend(extract_list(kosdaq_result))
+
+        if not combined_list:
+            return [], "코스피/코스닥 종목 데이터가 없습니다."
+
+        # 시가총액 기준 정렬
+        def get_market_cap(item):
+            mac_str = item.get("mac", "0").replace(",", "")
+            try:
+                return int(mac_str)
+            except ValueError:
+                return 0
+
+        sorted_list = sorted(combined_list, key=get_market_cap, reverse=True)
+
+        # 상위 N개만 정제해서 반환
+        top_items = []
+        for rank, item in enumerate(sorted_list[:top_n], start=1):
+            top_items.append({
+                "rank": rank,
+                "code": item.get("code", ""),
+                "name": item.get("name", ""),
+                "market": item.get("marketName", ""),
+                "market_cap": item.get("mac", "0"),
+                "price": item.get("lastPrice", "0"),
+                "change_price": item.get("prdy_vrss", item.get("diff", "0")),  # 전일대비 가격
+                "change_rate": item.get("prdy_ctrt", item.get("rate", "0")),   # 등락률
+                "volume": item.get("trd_qty", item.get("listCount", "0"))      # 거래량(필드명 환경마다 다름)
+            })
+
+        log.info(f"시가총액 상위 {len(top_items)}개 종목 정보 정제 완료 (환경: {env})")
+        return top_items, None
+
+    except Exception as e:
+        log.exception(f"시가총액 정렬 중 오류 발생: {e}")
+        return [], f"서버 오류 발생: {str(e)}"
 
 # --- 당일 거래량 상위 종목 조회 함수 (ka10030) ---
 def get_top_volume_stocks(
