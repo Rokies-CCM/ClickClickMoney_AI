@@ -1,1 +1,36 @@
+<<<<<<< HEAD
 .env
+=======
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.dist/
+build/
+.idea/
+.vscode/
+
+# Environment
+.venv/
+.env
+.env.*
+*.env
+
+# Data/Models
+data/chroma/
+data/*.index
+data/*meta*.json
+
+# Poetry
+poetry.lock
+
+# Logs
+logs/
+*.log
+
+# Cache
+.cache/
+huggingface/
+>>>>>>> origin/yejin_merge
