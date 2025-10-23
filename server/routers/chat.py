@@ -615,7 +615,7 @@ async def chat(req: Request):
                                 min_k=cfg.NEWS_MIN_K,
                                 prefer_web_first=True
                             )
-                            safer = await model_client.generate(sys_p, dev_p, question, ctx3, chat_history)
+                            safer = await model_client.generate(sys_p, dev_p, question, ctx3, chat_history=chat_history)
                             safer = sanitize_body_text(_sanitize_text_with_numbers(safer, _collect_allowed_hosts(used3, ctx3), extract_numbers(ctx3)))
                             _, s3 = normalize_citations(used3, max_sources=cfg.MAX_SOURCES)
                             if (compute_evidence_score(ctx3, safer) >= evd0) or (len(s3) > 0):
@@ -699,7 +699,7 @@ async def chat(req: Request):
                 yield f"event: start\ndata: {trace_id}\n\n"
                 if stream_early:
                     buf = ""
-                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history):
+                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -728,7 +728,7 @@ async def chat(req: Request):
                             yield f"data: {safe_tail}\n\n"
                             sent_parts.append(safe_tail + "\n")
                 else:
-                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history):
+                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -759,7 +759,7 @@ async def chat(req: Request):
 
     # ------------------------ JSON ------------------------
     t_gen_s = time.monotonic()
-    answer = await model_client.generate(sys_p, dev_p, question, ctx, chat_history)
+    answer = await model_client.generate(sys_p, dev_p, question, ctx, chat_history=chat_history)
     answer = sanitize_body_text(answer)
 
     try:
@@ -778,7 +778,7 @@ async def chat(req: Request):
                     min_k=cfg.NEWS_MIN_K,
                     prefer_web_first=True
                 )
-                ans2 = await model_client.generate(sys_p, dev_p, question, ctxx, chat_history)
+                ans2 = await model_client.generate(sys_p, dev_p, question, ctxx, chat_history=chat_history)
                 ans2 = sanitize_body_text(ans2)
                 if compute_evidence_score(ctxx, ans2) >= evd0:
                     answer, used_passages, ctx = ans2, usedx, ctxx
