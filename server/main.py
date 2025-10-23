@@ -15,6 +15,10 @@ from core.metrics import get_bench_results
 from server.routers import chat, ingest
 from server.routers.quiz import router as quiz_router
 from server.routers.tips import router as tips_router  # ← 추가
+<<<<<<< HEAD
+=======
+from server.routers import stock
+>>>>>>> origin/feat/stock
 
 try:
     from core.config import get_settings  # type: ignore
@@ -185,6 +189,10 @@ app.include_router(chat.router,   prefix="/v1")
 app.include_router(ingest.router, prefix="/v1")
 app.include_router(quiz_router,   prefix="/v1")
 app.include_router(tips_router,   prefix="/v1")  # /v1/tips 로 제공
+<<<<<<< HEAD
+=======
+app.include_router(stock.router,  prefix="/v1")
+>>>>>>> origin/feat/stock
 
 # ----------------------------------------------------------------------
 # Bench results
