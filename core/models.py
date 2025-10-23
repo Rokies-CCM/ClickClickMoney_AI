@@ -25,11 +25,7 @@ log = logging.getLogger("ai-chatbot")
 _settings = get_settings()
 
 
-<<<<<<< HEAD
 def _compose_messages(system: str, developer: str, user: str, context: Optional[str], chat_history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
-=======
-def _compose_messages(system: str, developer: str, user: str, context: Optional[str]) -> List[Dict[str, str]]:
->>>>>>> origin/feat/stock
     """
     system + developer + context를 하나의 system 메시지로 병합하여
     OpenAI/Groq 모두 호환되게 만듦.
@@ -48,11 +44,8 @@ def _compose_messages(system: str, developer: str, user: str, context: Optional[
     messages: List[Dict[str, str]] = []
     if sys_text:
         messages.append({"role": "system", "content": sys_text})
-<<<<<<< HEAD
     if chat_history:
         messages.extend(chat_history)
-=======
->>>>>>> origin/feat/stock
     messages.append({"role": "user", "content": user})
     return messages
 
@@ -152,13 +145,8 @@ class OpenAICompatibleClient:
         log.warning(f"[fallback] using openai model '{kwargs['model']}'")
         return await oai.chat.completions.create(**kwargs)
 
-<<<<<<< HEAD
     async def stream(self, system: str, developer: str, user: str, context: Optional[str] = None, chat_history: Optional[List[Dict[str, str]]] = None) -> AsyncGenerator[str, None]:
         messages = _compose_messages(system, developer, user, context, chat_history)
-=======
-    async def stream(self, system: str, developer: str, user: str, context: Optional[str] = None) -> AsyncGenerator[str, None]:
-        messages = _compose_messages(system, developer, user, context)
->>>>>>> origin/feat/stock
         full_prompt = (system or "") + (developer or "") + (context or "") + (user or "")
         kwargs: Dict[str, Any] = {
             "model": self.model,
@@ -178,13 +166,8 @@ class OpenAICompatibleClient:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
-<<<<<<< HEAD
     async def generate(self, system: str, developer: str, user: str, context: Optional[str] = None, chat_history: Optional[List[Dict[str, str]]] = None) -> str:
         messages = _compose_messages(system, developer, user, context, chat_history)
-=======
-    async def generate(self, system: str, developer: str, user: str, context: Optional[str] = None) -> str:
-        messages = _compose_messages(system, developer, user, context)
->>>>>>> origin/feat/stock
         full_prompt = (system or "") + (developer or "") + (context or "") + (user or "")
         kwargs: Dict[str, Any] = {
             "model": self.model,

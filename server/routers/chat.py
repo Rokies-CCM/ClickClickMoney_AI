@@ -26,13 +26,10 @@ from core.evidence import analyze_question, normalize_citations
 # 근거 꼬리 렌더러는 더 이상 사용하지 않으므로 import 제거
 # from core.answer import render_answer, render_tail
 
-<<<<<<< HEAD
 # 최대 12개의 대화를 기록(이전 대화 내역은 10개) 늘리기를 원할 시 최대 10개 권장
 MAX_HISTORY_TURNS = 5
 MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2
 
-=======
->>>>>>> origin/feat/stock
 try:
     from core.utils import count_tokens  # tiktoken 기반
 except Exception:
@@ -86,10 +83,7 @@ class ChatPayload(BaseModel):
     max_context_chars: Optional[int] = Field(default=None, ge=200, le=8000)
     stream: Optional[bool] = Field(default=True)
     facts: Optional[Dict[str, str]] = Field(default=None, description="사용자 제공 수치")
-<<<<<<< HEAD
     chat_history: List[Dict[str, str]] = Field(default=[], description="이전 대화 기록")
-=======
->>>>>>> origin/feat/stock
 
 # ------------------------ URL / 수치 가드 ------------------------
 _URL_RE = re.compile(r"https?://[^\s\])}>,]+", re.IGNORECASE)
@@ -444,13 +438,11 @@ async def chat(req: Request):
     domain = (payload.domain or "").lower()
     client_ctx = payload.context or ""
     facts = payload.facts or {}
-<<<<<<< HEAD
+
     chat_history = payload.chat_history
 
     if len(chat_history) > MAX_HISTORY_MESSAGES:
         chat_history = chat_history[-MAX_HISTORY_MESSAGES:]
-=======
->>>>>>> origin/feat/stock
 
     trace_id = new_trace_id()
     log = get_trace_logger(trace_id)
@@ -509,13 +501,12 @@ async def chat(req: Request):
             "completion_tokens": count_tokens(answer_cached, model_cached),
             "total_tokens": count_tokens((SYSTEM_PROMPT or "") + (DEVELOPER_PROMPT or "") + question + ctx_cached, model_cached) + count_tokens(answer_cached, model_cached),
         }
-<<<<<<< HEAD
+
         updated_history_cached = chat_history + [
             {"role": "user", "content": question},
             {"role": "assistant", "content": answer_cached}
         ]
-=======
->>>>>>> origin/feat/stock
+
 
         # 버튼 생성 (캐시 결과 기반)
         try:
@@ -534,10 +525,8 @@ async def chat(req: Request):
                     "usage": usage_cached, "context_used": ctx_cached,
                     "sources": used_passages_cached, "source_buttons": source_buttons_cached,
                     "cost_usd_estimate": None,
-<<<<<<< HEAD
                     "chat_history": updated_history_cached,
-=======
->>>>>>> origin/feat/stock
+
                     "from_cache": True,
                 }
                 yield f"event: done\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
@@ -553,10 +542,7 @@ async def chat(req: Request):
             "model": model_cached,
             "provider": provider_cached,
             "usage": usage_cached,
-<<<<<<< HEAD
             "chat_history": updated_history_cached,
-=======
->>>>>>> origin/feat/stock
             "from_cache": True,
         })
 
@@ -633,11 +619,11 @@ async def chat(req: Request):
                                 min_k=cfg.NEWS_MIN_K,
                                 prefer_web_first=True
                             )
-<<<<<<< HEAD
+                            
+                            # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                             safer = await model_client.generate(sys_p, dev_p, question, ctx3, chat_history=chat_history)
-=======
-                            safer = await model_client.generate(sys_p, dev_p, question, ctx3)
->>>>>>> origin/feat/stock
+                            # --- 병합 충돌 해결 끝 ---
+                            
                             safer = sanitize_body_text(_sanitize_text_with_numbers(safer, _collect_allowed_hosts(used3, ctx3), extract_numbers(ctx3)))
                             _, s3 = normalize_citations(used3, max_sources=cfg.MAX_SOURCES)
                             if (compute_evidence_score(ctx3, safer) >= evd0) or (len(s3) > 0):
@@ -694,22 +680,22 @@ async def chat(req: Request):
                     cost = (usage["total_tokens"] / 1000) * (0.003)
                 except Exception:
                     cost = None
-<<<<<<< HEAD
+                
+                # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                 updated_history = chat_history + [
                     {"role": "user", "content": question_raw},
                     {"role": "assistant", "content": final_text}
                 ]
-=======
->>>>>>> origin/feat/stock
+                # --- 병합 충돌 해결 끝 ---
+
                 meta = {
                     "provider": provider_name, "model": model_name,
                     "usage": usage, "context_used": ctx_used, "sources": passages_used,
                     "source_buttons": source_buttons,
                     "cost_usd_estimate": round(cost, 6) if cost is not None else None,
-<<<<<<< HEAD
+                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     "chat_history": updated_history,
-=======
->>>>>>> origin/feat/stock
+                    # --- 병합 충돌 해결 끝 ---
                     "from_cache": False,
                 }
 
@@ -727,11 +713,9 @@ async def chat(req: Request):
                 yield f"event: start\ndata: {trace_id}\n\n"
                 if stream_early:
                     buf = ""
-<<<<<<< HEAD
+                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
-=======
-                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx):
->>>>>>> origin/feat/stock
+                    # --- 병합 충돌 해결 끝 ---
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -760,11 +744,9 @@ async def chat(req: Request):
                             yield f"data: {safe_tail}\n\n"
                             sent_parts.append(safe_tail + "\n")
                 else:
-<<<<<<< HEAD
+                    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                     async for chunk in model_client.stream(sys_p, dev_p, question, ctx, chat_history=chat_history):
-=======
-                    async for chunk in model_client.stream(sys_p, dev_p, question, ctx):
->>>>>>> origin/feat/stock
+                    # --- 병합 충돌 해결 끝 ---
                         if not chunk:
                             continue
                         full_chunks.append(chunk)
@@ -795,11 +777,11 @@ async def chat(req: Request):
 
     # ------------------------ JSON ------------------------
     t_gen_s = time.monotonic()
-<<<<<<< HEAD
+    
+    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
     answer = await model_client.generate(sys_p, dev_p, question, ctx, chat_history=chat_history)
-=======
-    answer = await model_client.generate(sys_p, dev_p, question, ctx)
->>>>>>> origin/feat/stock
+    # --- 병합 충돌 해결 끝 ---
+    
     answer = sanitize_body_text(answer)
 
     try:
@@ -818,11 +800,11 @@ async def chat(req: Request):
                     min_k=cfg.NEWS_MIN_K,
                     prefer_web_first=True
                 )
-<<<<<<< HEAD
+                
+                # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
                 ans2 = await model_client.generate(sys_p, dev_p, question, ctxx, chat_history=chat_history)
-=======
-                ans2 = await model_client.generate(sys_p, dev_p, question, ctxx)
->>>>>>> origin/feat/stock
+                # --- 병합 충돌 해결 끝 ---
+
                 ans2 = sanitize_body_text(ans2)
                 if compute_evidence_score(ctxx, ans2) >= evd0:
                     answer, used_passages, ctx = ans2, usedx, ctxx
@@ -882,14 +864,13 @@ async def chat(req: Request):
     except Exception:
         pass
 
-<<<<<<< HEAD
+    # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
     updated_history = chat_history + [
         {"role": "user", "content": question_raw},
         {"role": "assistant", "content": answer}
     ]
+    # --- 병합 충돌 해결 끝 ---
 
-=======
->>>>>>> origin/feat/stock
     return JSONResponse(content={
         "trace_id": trace_id,
         "answer": answer,
@@ -899,10 +880,9 @@ async def chat(req: Request):
         "model": model_name,
         "provider": provider_name,
         "usage": usage,
-<<<<<<< HEAD
+        # --- 병합 충돌 해결 (HEAD - chat_history 사용) ---
         "chat_history": updated_history
-=======
->>>>>>> origin/feat/stock
+        # --- 병합 충돌 해결 끝 ---
     })
 
 # ------------------------ Utils ------------------------
