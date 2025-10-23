@@ -1,0 +1,50 @@
+# ---------- Build stage ----------
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl git && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Poetry 설치 (프로젝트는 Poetry 기반)
+RUN pip install --no-cache-dir poetry==1.8.3
+
+# pyproject만 먼저 복사 → lock/install 캐시 활용
+COPY pyproject.toml /app/pyproject.toml
+
+# 패키지 모드가 아닐 수도 있으니 --no-root 기본
+RUN poetry lock --no-cache && poetry install --no-interaction --no-ansi --no-root
+
+# 나머지 복사
+COPY . /app
+
+# 인덱싱 스크립트가 sentence-transformers 등 모델 캐시를 필요로 할 수 있으므로,
+# 런타임 이미지에만 올릴지 여부는 운영 정책에 따라 분리. 여기선 런타임에서 실행.
+
+# ---------- Runtime stage ----------
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Seoul
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl tini && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# builder에서 설치된 가상환경을 복제
+COPY --from=builder /root/.cache /root/.cache
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /app /app
+
+# 헬스체크용 curl
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -fsS http://localhost:8000/v1/health || exit 1
+
+# uvicorn 실행 (SSE를 위한 HTTP/1.1 keepalive 유지)
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["poetry", "run", "uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000"]
