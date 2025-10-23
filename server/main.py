@@ -14,6 +14,7 @@ from fastapi.responses import ORJSONResponse, JSONResponse
 from core.metrics import get_bench_results
 from server.routers import chat, ingest
 from server.routers.quiz import router as quiz_router
+from server.routers.tips import router as tips_router  # ← 추가
 
 try:
     from core.config import get_settings  # type: ignore
@@ -51,7 +52,6 @@ def _load_cors_origins() -> List[str]:
     env_val = os.getenv("CORS_ORIGINS", "").strip()
     if env_val:
         return [o.strip() for o in env_val.split(",") if o.strip()]
-    # settings가 있으면 우선 적용
     if get_settings is not None:
         try:
             s = get_settings()
@@ -62,8 +62,9 @@ def _load_cors_origins() -> List[str]:
                 return [x.strip() for x in cors.split(",")]
         except Exception:
             pass
-    # 기본: 개발 편의 화이트리스트 (운영은 ENV 설정 권장)
     return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8080",
@@ -183,6 +184,7 @@ async def limit_body_size(request: Request, call_next):
 app.include_router(chat.router,   prefix="/v1")
 app.include_router(ingest.router, prefix="/v1")
 app.include_router(quiz_router,   prefix="/v1")
+app.include_router(tips_router,   prefix="/v1")  # /v1/tips 로 제공
 
 # ----------------------------------------------------------------------
 # Bench results
