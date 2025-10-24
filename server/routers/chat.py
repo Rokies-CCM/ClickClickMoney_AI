@@ -6,6 +6,7 @@ import asyncio
 from typing import Optional, Dict, List, Set, Tuple
 from collections import deque
 from urllib.parse import urlparse
+from collections import defaultdict
 
 from fastapi import APIRouter, Request, Body
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -532,8 +533,7 @@ async def chat(req: Request):
                 log.info(f"[Consumption] Manual comparison: {current_start}~{current_end} vs {prev_start}~{prev_end}")
                 
                 # 두 달 데이터 직접 가져오기
-                from core.backend_client import get_consumption_data, format_consumption_for_llm
-                from collections import defaultdict
+                
                 
                 current_data = await get_consumption_data(
                     start_date=current_start,
