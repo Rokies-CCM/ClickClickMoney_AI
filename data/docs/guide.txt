@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-프로젝트 개요 텍스트입니다.
-=======
 title: ai-chatbot 운영 가이드
 version: 1.3
 last_updated: 2025-10-19
@@ -42,4 +39,6 @@ locale: ko-KR
 [운영 체크]
 - 에러 응답은 trace_id만 노출, 내부 메시지/스택 비노출
 - 캐시 히트율/지연 p95/토큰 평균을 주기적으로 점검
->>>>>>> origin/feat/stock
+
+
+
