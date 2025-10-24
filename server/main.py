@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import ORJSONResponse, JSONResponse
 from core.metrics import get_bench_results
-from server.routers import chat, ingest
+from server.routers import chat, ingest, stock
 from server.routers.quiz import router as quiz_router
 from server.routers.tips import router as tips_router  # ← 추가
 
@@ -185,6 +185,8 @@ app.include_router(chat.router,   prefix="/v1")
 app.include_router(ingest.router, prefix="/v1")
 app.include_router(quiz_router,   prefix="/v1")
 app.include_router(tips_router,   prefix="/v1")  # /v1/tips 로 제공
+app.include_router(stock.router, prefix="/v1")
+
 
 # ----------------------------------------------------------------------
 # Bench results

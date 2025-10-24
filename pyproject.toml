@@ -62,6 +62,9 @@ dependencies = [
   "pyppeteer>=2.0.0,<3.0.0",
 
 
+  "websockets>=10.0,<11.0",
+
+
   "httpx[http2] (>=0.28.1,<0.29.0)",
   "openai>=1.50.2,<2.0.0",
   "tiktoken>=0.7.0,<0.8.0",
@@ -69,6 +72,7 @@ dependencies = [
   "kiwipiepy (>=0.21.0,<0.22.0)",
   "kss (>=6.0.5,<7.0.0)",
   "nltk (>=3.9.2,<4.0.0)",
+
 ]
 
 [tool.poetry]
