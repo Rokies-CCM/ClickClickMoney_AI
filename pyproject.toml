@@ -1,0 +1,88 @@
+[project]
+name = "ai-chatbot"
+version = "0.1.0"
+description = ""
+authors = [{ name = "younggyu01", email = "gugy0706@gmail.com" }]
+readme = "README.md"
+requires-python = "<3.15,>=3.10"
+
+dependencies = [
+  # infra
+  "python-dotenv>=1.1.1,<2.0.0",
+
+  # LangChain 0.3.x family
+  "langchain>=0.3.27,<0.4.0",
+  "langchain-core>=0.3.76,<0.4.0",
+  "langchain-community>=0.3.29,<0.4.0",
+  "langchain-openai>=0.3.33,<0.4.0",
+
+  # LangSmith (LC 0.3.76+ 요구)
+  "langsmith>=0.3.45,<1.0.0",
+
+  # API/서빙 (gradio 5.46.0 호환)
+  "fastapi>=0.116.2,<0.117.0",
+  "uvicorn>=0.35.0,<0.36.0",
+  "sse-starlette>=3.0.2,<4.0.0",
+  "gradio>=5.46.0,<6.0.0",
+
+  # 타입/런타임
+  "pydantic>=2.11.9,<3.0.0",
+
+  # RAG: FAISS(윈도우 안정), sentence-transformers
+  "faiss-cpu>=1.12.0,<2.0.0",
+  "sentence-transformers>=5.1.1,<6.0.0",
+
+  # 모델/도구 확장 (LC 0.3.x 호환 라인)
+  "langchain-ollama>=0.3.8,<0.4.0",
+  "langgraph>=0.6.7,<0.7.0",
+  "langserve>=0.3.2,<0.4.0",
+  "langchain-upstage>=0.7.3,<0.8.0",
+  "langchain-google-genai>=2.1.12,<3.0.0",
+  "langchain-huggingface>=0.3.1,<0.4.0",
+  "langchain-experimental>=0.3.4,<0.4.0",
+
+  # 파일/RAG 도구
+  "pypdf>=4.2.0,<5.0.0",
+  "chardet>=5.2.0,<6.0.0",
+  "docx2txt>=0.9,<0.10",
+  "beautifulsoup4>=4.13.5,<5.0.0",
+  "gradio-pdf>=0.0.22,<0.0.23",
+
+  # 통계/시각화
+  "scikit-learn>=1.7.2,<2.0.0",
+  "matplotlib>=3.10.6,<4.0.0",
+  "seaborn>=0.13.2,<0.14.0",
+  "tabulate>=0.9.0,<0.10.0",
+
+  # 검색 도구
+  "tavily-python>=0.7.12,<0.8.0",
+  "wikipedia>=1.4.0,<2.0.0",
+
+  # 크롤링/브라우징(선택)
+  "pyppeteer>=2.0.0,<3.0.0",
+
+
+  "websockets>=10.0,<11.0",
+
+
+  "httpx[http2] (>=0.28.1,<0.29.0)",
+  "openai>=1.50.2,<2.0.0",
+  "tiktoken>=0.7.0,<0.8.0",
+  "chromadb>=0.5.4,<0.6.0",
+  "kiwipiepy (>=0.21.0,<0.22.0)",
+  "kss (>=6.0.5,<7.0.0)",
+  "nltk (>=3.9.2,<4.0.0)",
+
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+  "ipykernel>=6.30.1,<7.0.0"
+]
