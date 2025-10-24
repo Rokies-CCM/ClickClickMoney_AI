@@ -4,10 +4,12 @@ import json
 import time
 import logging
 import asyncio
+from concurrent.futures import ThreadPoolExecutor # ← ThreadPoolExecutor만 사용
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Literal, List
 from core.config import get_settings
 
+# --- (설정 로드 및 ENV_CONFIG, 토큰 캐시 부분은 기존과 동일) ---
 # 로거 설정
 log = logging.getLogger("kiwoom_api")
 
@@ -16,10 +18,9 @@ try:
     cfg = get_settings()
 except ImportError:
     log.warning("core.config 모듈을 찾을 수 없어 .env 파일에서 직접 설정을 로드합니다.")
-    # 실제 환경에서는 core.config 사용 필수
     import os
     from dotenv import load_dotenv
-    load_dotenv() # .env 파일 로드 시도
+    load_dotenv() 
 
     class MockSettings: # 임시 설정 클래스
         KIWOOM_APP_KEY: Optional[str] = os.getenv("KIWOOM_APP_KEY")
@@ -30,7 +31,6 @@ except ImportError:
 
 
 # --- 환경별 설정 ---
-# 설정 파일에서 키 값들을 가져와 ENV_CONFIG 구성
 ENV_CONFIG = {
     "real": {
         "host": "https://api.kiwoom.com",
@@ -48,7 +48,7 @@ ENV_CONFIG = {
 _access_tokens: Dict[Literal["real", "mock"], Optional[str]] = {"real": None, "mock": None}
 _token_expires_at: Dict[Literal["real", "mock"], Optional[datetime]] = {"real": None, "mock": None}
 
-# --- 접근 토큰 발급 함수 ---
+# --- 접근 토큰 발급 함수 (기존과 동일) ---
 def _issue_access_token(env: Literal["real", "mock"] = "real") -> Optional[Tuple[str, datetime]]:
     """선택된 환경(실전/모의)에 대한 키움증권 API 접근 토큰(au10001)을 발급받습니다."""
     config = ENV_CONFIG.get(env)
@@ -89,12 +89,12 @@ def _issue_access_token(env: Literal["real", "mock"] = "real") -> Optional[Tuple
         if not token or not expires_dt_str:
              # 키움 자체 에러 (return_code != 0) 처리
              if result.get("return_code") != 0:
-                  error_msg = result.get("return_msg", "알 수 없는 토큰 발급 오류")
-                  log.error(f"키움 토큰 발급 실패 (환경: {env}): {error_msg} (Code: {result.get('return_code')})")
-                  return None
+                 error_msg = result.get("return_msg", "알 수 없는 토큰 발급 오류")
+                 log.error(f"키움 토큰 발급 실패 (환경: {env}): {error_msg} (Code: {result.get('return_code')})")
+                 return None
              else:
-                  log.error(f"토큰 발급 응답에서 'token' 또는 'expires_dt' 필드 누락 (환경: {env}). 응답: {result}")
-                  return None
+                 log.error(f"토큰 발급 응답에서 'token' 또는 'expires_dt' 필드 누락 (환경: {env}). 응답: {result}")
+                 return None
 
         # 만료 시간 계산 (API 응답 시간 기준 + 여유 시간 1분 빼기)
         try:
@@ -122,7 +122,7 @@ def _issue_access_token(env: Literal["real", "mock"] = "real") -> Optional[Tuple
         log.exception(f"토큰 발급 처리 중 예상치 못한 오류 발생 (환경: {env}): {e}")
         return None
 
-# --- 유효한 접근 토큰 가져오는 함수 ---
+# --- 유효한 접근 토큰 가져오는 함수 (기존과 동일) ---
 def _get_valid_access_token(env: Literal["real", "mock"] = "real") -> Optional[str]:
     """선택된 환경에 대한 유효한 접근 토큰을 반환 (캐싱 및 자동 재발급)."""
     global _access_tokens, _token_expires_at
@@ -149,7 +149,7 @@ def _get_valid_access_token(env: Literal["real", "mock"] = "real") -> Optional[s
         _token_expires_at[env] = None
         return None
 
-# --- API 호출 공통 헬퍼 함수 ---
+# --- API 호출 공통 헬퍼 함수 (기존과 동일) ---
 def _call_kiwoom_api(
     endpoint: str,
     api_id: str,
@@ -199,10 +199,19 @@ def _call_kiwoom_api(
         }
         
         # 키움 자체 에러 코드 확인 (rt_cd != "0")
-        if response_body.get("rt_cd") != "0":
-             error_msg = response_body.get("msg1", f"키움 API 처리 오류 (rt_cd: {response_body.get('rt_cd')})")
+        # rt_cd, return_code 둘 다 확인
+        rt_cd = response_body.get("rt_cd")
+        return_code = response_body.get("return_code") # (string or int, e.g., "0" or 0)
+
+        # 성공 판정: rt_cd가 "0"이거나, return_code가 "0" 또는 0인 경우
+        # str()로 감싸서 "0" == "0" 또는 0 == "0" (str(0)) 모두 처리
+        is_success = (rt_cd == "0") or (str(return_code) == "0")
+
+        if not is_success:
+             # 에러 메시지 추출
+             code = rt_cd if rt_cd is not None else return_code
+             error_msg = response_body.get("msg1", f"키움 API 처리 오류 (rt_cd/return_code: {code})")
              log.error(f"키움 API 처리 오류 (ID: {api_id}, 환경: {env}, Status: {response.status_code}): {error_msg}")
-             # body에 오류 내용이 있으므로 그대로 반환하되, 로그는 에러로 남김
         else:
              log.info(f"키움 API 호출 성공 (ID: {api_id}, 환경: {env}, Status: {result['status_code']})")
 
@@ -235,95 +244,173 @@ def _call_kiwoom_api(
         log.exception(f"API({api_id}, {env}) 처리 중 예상치 못한 오류 발생: {e}")
         return {"status_code": 500, "error": f"Unexpected server error: {str(e)}", "body": None}
 
-# --- (신규) 종목 정보 리스트 요청 (ka10099) ---
+# --- 종목 정보 리스트 요청 (ka10099) (기존과 동일) ---
 def get_stock_list(
-    market_type: Literal["0", "10"], # 0: 코스피, 10: 코스닥
+    market_type: Literal["0", "10"],
     env: Literal["real", "mock"] = "real",
     cont_yn: str = 'N',
     next_key: str = ''
 ) -> Optional[dict]:
     """종목 정보 리스트(ka10099)를 조회합니다. (코스피 또는 코스닥)"""
-    # ka10099 API에 필요한 data 파라미터 구성
-    data = {
-        'mrkt_tp': market_type
-        # 필요 시 다른 ka10099 파라미터 추가 가능 (예: 관리종목 제외 등)
-    }
+    data = { 'mrkt_tp': market_type }
+
+    # ✅ 환경별 엔드포인트 차이 반영
+    endpoint = '/api/dostk/stkinfo'
+    api_id = 'ka10099'
+
     return _call_kiwoom_api(
-        endpoint='/api/dostk/stkinfo', # ka10099 엔드포인트
-        api_id='ka10099',
+        endpoint=endpoint,
+        api_id=api_id,
         data=data,
         env=env,
         cont_yn=cont_yn,
         next_key=next_key
     )
 
-# --- (신규) 코스피/코스닥 종목 리스트를 합치고 시가총액으로 정렬하는 헬퍼 함수 ---
-async def get_sorted_market_cap_codes(
+# --- (신규) 단일 종목 상세 조회 (ka10001) ---
+def get_stock_detail(
+    code: str,
+    env: Literal["real", "mock"] = "real",
+    cont_yn: str = 'N',
+    next_key: str = ''
+) -> Optional[dict]:
+    """
+    (신규) 단일 종목 상세 조회(ka10001)를 _call_kiwoom_api 헬퍼를 통해 호출합니다.
+    """
+    data = {'stk_cd': code} # ka10001 파라미터
+    return _call_kiwoom_api(
+        endpoint='/api/dostk/stkinfo', # API 문서 기준
+        api_id='ka10001',
+        data=data,
+        env=env,
+        cont_yn=cont_yn,
+        next_key=next_key
+    )
+
+# --- (리팩토링) 코스피/코스닥 종목 리스트를 합치고 시가총액으로 정렬하는 헬퍼 함수 ---
+def get_sorted_market_cap_codes(
     top_n: int = 50,
     env: Literal["real", "mock"] = "real"
-) -> Tuple[List[Dict[str, str]], Optional[str]]:
+) -> Tuple[List[Dict], Optional[str]]: # ✅ async 제거, 반환 타입 수정
     """
-    코스피/코스닥 종목 중 시가총액 상위 N개를 조회하여
-    순위, 종목명, 시가총액, 현재가, 전일대비, 등락률, 거래량 정보를 반환합니다.
+    (리팩토링) 시가총액 상위 종목 리스트와 상세 정보를 조회합니다.
+    이 함수는 동기적으로 동작하며, 내부적으로 ThreadPoolExecutor를 사용해 상세 조회를 병렬화합니다.
     """
-    log.info(f"시가총액 상위 {top_n}개 종목 정보 조회 시작 (환경: {env})")
+    log.info(f"시가총액 상위 {top_n}개 종목 조회 시작 (환경: {env})")
 
-    try:
-        # 코스피/코스닥 동시 요청 (스레드로 병렬 처리)
-        kospi_task = asyncio.to_thread(get_stock_list, market_type="0", env=env)
-        kosdaq_task = asyncio.to_thread(get_stock_list, market_type="10", env=env)
-        kospi_result, kosdaq_result = await asyncio.gather(kospi_task, kosdaq_task, return_exceptions=True)
+    # 1️⃣ 시총 리스트 조회 (ka10099)
+    list_response = get_stock_list(market_type="0", env=env) # ✅ await 제거
 
-        combined_list = []
-        error_messages = []
+    if not list_response or list_response.get("status_code") != 200:
+        err = list_response.get('error', 'API Error')
+        log.error(f"[{env}] 종목 목록 조회 실패 (Status: {list_response.get('status_code')}): {err}")
+        return [], f"종목 목록 조회 실패: {err}"
+    
+    body = list_response.get("body")
+    rt_cd_list = body.get("rt_cd")
+    return_code_list = body.get("return_code")
+    is_list_success = (rt_cd_list == "0") or (str(return_code_list) == "0")
 
-        # 안전하게 리스트 추출
-        def extract_list(result):
-            if not result or not isinstance(result, dict):
-                return []
-            body = result.get("body", {})
-            items = body.get("list", [])
-            return items if isinstance(items, list) else []
+    if not body or not is_list_success:
+        code = rt_cd_list if rt_cd_list is not None else return_code_list
+        msg = body.get('msg1', f'API Error (Code: {code})')
+        log.error(f"[{env}] 종목 목록 API 오류 (rt_cd/return_code: {code}): {msg}")
+        return [], f"종목 목록 API 오류: {msg}"
 
-        combined_list.extend(extract_list(kospi_result))
-        combined_list.extend(extract_list(kosdaq_result))
+    base_list = body.get("list", [])
+    if not base_list:
+        return [], "종목 데이터 없음"
 
-        if not combined_list:
-            return [], "코스피/코스닥 종목 데이터가 없습니다."
+    # --- 2. 리스트 필터링 및 정렬 ---
+    # (모의투자 시 ETF/ETN 제외 로직 유지)
+    if env == "mock":
+        base_list = [
+            item for item in base_list
+            if not any(keyword in item.get("name", "") for keyword in ["ETF", "ETN", "TIGER", "KODEX"])
+        ]
 
-        # 시가총액 기준 정렬
-        def get_market_cap(item):
-            mac_str = item.get("mac", "0").replace(",", "")
-            try:
-                return int(mac_str)
-            except ValueError:
-                return 0
+    # 시총 기준 정렬
+    def get_market_cap(item):
+        mac_str = item.get("mac", "0").replace(",", "")
+        try:
+            return int(mac_str)
+        except ValueError:
+            return 0
 
-        sorted_list = sorted(combined_list, key=get_market_cap, reverse=True)
+    sorted_list = sorted(base_list, key=get_market_cap, reverse=True)
+    top_stocks_list = sorted_list[:top_n]
 
-        # 상위 N개만 정제해서 반환
-        top_items = []
-        for rank, item in enumerate(sorted_list[:top_n], start=1):
-            top_items.append({
-                "rank": rank,
-                "code": item.get("code", ""),
-                "name": item.get("name", ""),
-                "market": item.get("marketName", ""),
-                "market_cap": item.get("mac", "0"),
-                "price": item.get("lastPrice", "0"),
-                "change_price": item.get("prdy_vrss", item.get("diff", "0")),  # 전일대비 가격
-                "change_rate": item.get("prdy_ctrt", item.get("rate", "0")),   # 등락률
-                "volume": item.get("trd_qty", item.get("listCount", "0"))      # 거래량(필드명 환경마다 다름)
-            })
+    # --- 3. 상세정보 병렬 조회 (ThreadPoolExecutor 사용) ---
+    def fetch_detail_sync(stock_item: Dict) -> Optional[Dict]:
+        """(Sync) 단일 종목 상세 정보를 가져오는 헬퍼 함수"""
+        code = stock_item.get("code")
+        if not code:
+            return None
+        
+        try:
+            # 동기 get_stock_detail 함수 호출
+            detail_res = get_stock_detail(code=code, env=env)
+            
+            if not detail_res or detail_res.get("status_code") != 200:
+                log.warning(f"[{env}] 상세 조회 실패 ({code}): {detail_res.get('error')}")
+                return None
 
-        log.info(f"시가총액 상위 {len(top_items)}개 종목 정보 정제 완료 (환경: {env})")
-        return top_items, None
+            detail_body = detail_res.get("body")
 
-    except Exception as e:
-        log.exception(f"시가총액 정렬 중 오류 발생: {e}")
-        return [], f"서버 오류 발생: {str(e)}"
+            # ✅ [수정] rt_cd 또는 return_code 확인
+            rt_cd_detail = detail_body.get("rt_cd")
+            return_code_detail = detail_body.get("return_code")
+            is_detail_success = (rt_cd_detail == "0") or (str(return_code_detail) == "0")
 
-# --- 당일 거래량 상위 종목 조회 함수 (ka10030) ---
+            if not detail_body or not is_detail_success:
+                code_val = rt_cd_detail if rt_cd_detail is not None else return_code_detail
+                log.warning(f"[{env}] 상세 조회 API 오류 ({code}): {detail_body.get('msg1')} (Code: {code_val})")
+                return None
+            
+            output = detail_body.get("output", {})
+            
+            # 리스트 정보와 상세 정보를 조합
+            return {
+                "code": code,
+                "name": output.get("stk_nm", stock_item.get("name", "")),
+                "market": output.get("mrkt_nm", stock_item.get("marketName", "")),
+                "market_cap": output.get("mrkt_val", stock_item.get("mac", "0")),
+                "price": output.get("stck_prpr", stock_item.get("lastPrice", "0")),
+                "change_price": output.get("prdy_vrss", stock_item.get("diff", "0")),
+                "change_rate": output.get("prdy_ctrt", stock_item.get("rate", "0")),
+                "volume": output.get("acml_vol", stock_item.get("trd_qty", "0")),
+            }
+        except Exception as e:
+            log.error(f"[{env}] 상세조회 태스크 실패 ({code}): {e}", exc_info=True)
+            return None
+
+    # ✅ ThreadPoolExecutor로 병렬 실행
+    results = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        # map을 사용하여 순서를 유지하면서 병렬 실행
+        results = list(executor.map(fetch_detail_sync, top_stocks_list))
+
+    # --- 4. 최종 결과 정제 ---
+    valid_items = [r for r in results if r]
+    
+    # 상세 조회된 정보(market_cap) 기준으로 최종 정렬
+    def get_final_market_cap(item):
+        try: return int(item["market_cap"].replace(",", "") or 0)
+        except ValueError: return 0
+
+    valid_items.sort(key=get_final_market_cap, reverse=True)
+
+    # 순위(rank) 매기기
+    top_items = [
+        dict(item, rank=i + 1)
+        for i, item in enumerate(valid_items)
+    ]
+
+    log.info(f"[{env.upper()}] 시가총액 상위 {len(top_items)}개 종목 완료")
+    return top_items, None
+
+
+# --- 당일 거래량 상위 종목 조회 함수 (ka10030) (기존과 동일) ---
 def get_top_volume_stocks(
     data: dict,
     env: Literal["real", "mock"] = "real",
@@ -340,7 +427,7 @@ def get_top_volume_stocks(
         next_key=next_key
     )
 
-# --- (신규) 국내주식 시간별 투자자매매 현황 상세 요청 (ka00198) ---
+# --- 국내주식 시간별 투자자매매 현황 상세 요청 (ka00198) (기존과 동일) ---
 def get_investor_trading_details(
     data: dict,
     env: Literal["real", "mock"] = "mock",
@@ -350,8 +437,6 @@ def get_investor_trading_details(
     """국내주식 시간별 투자자매매 현황 상세(ka00198)를 조회합니다."""
     if env == "real":
         log.warning("ka00198 API는 현재 모의투자(mock) 환경에서만 테스트되었습니다. 실전(real) 호출 시 동작을 보장할 수 없습니다.")
-        # 필요 시 실전 호출 차단:
-        # return {"status_code": 400, "error": "ka00198 is only supported in mock environment", "body": None}
 
     return _call_kiwoom_api(
         endpoint='/api/dostk/stkinfo', # API 문서 기준 엔드포인트
@@ -362,7 +447,12 @@ def get_investor_trading_details(
         next_key=next_key
     )
 
-# --- 모듈 단독 실행 시 테스트 코드 ---
+# --- (삭제) get_stock_list_v2, get_stock_detail_v2, get_top_marketcap_realtime ---
+# 위 함수들은 get_stock_list, get_stock_detail, get_sorted_market_cap_codes로
+# 기능이 통합되거나 대체되었으므로 삭제되었습니다.
+
+
+# --- 모듈 단독 실행 시 테스트 코드 (기존과 동일) ---
 if __name__ == '__main__':
     # .env 파일 로드 및 로깅 설정
     try:
@@ -407,5 +497,13 @@ if __name__ == '__main__':
         print(json.dumps(mock_result_ka00198, indent=4, ensure_ascii=False))
     else:
         print("모의투자 ka00198 조회 실패 (API 호출 실패 또는 토큰 발급 실패)")
+        
+    # --- (추가) 리팩토링된 시가총액 상위 테스트 ---
+    print("\n--- 모의투자: 시가총액 상위 5개 조회 (리팩토링) ---")
+    top_5_mock, err_mock = get_sorted_market_cap_codes(top_n=5, env="mock") 
+    if err_mock:
+        print(f"모의투자 시총 조회 실패: {err_mock}")
+    else:
+        print(json.dumps(top_5_mock, indent=4, ensure_ascii=False))
 
     log.info("--- 키움 API 테스트 종료 ---")

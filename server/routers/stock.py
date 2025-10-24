@@ -14,7 +14,7 @@ router = APIRouter()
 log = logging.getLogger("stock_api")
 
 # ============================================================
-# 🧩 응답 모델 정의
+# 🧩 응답 모델 정의 (기존과 동일)
 # ============================================================
 
 class StockInfo(BaseModel):
@@ -29,7 +29,7 @@ class StockInfo(BaseModel):
     volume: str = Field(..., description="거래량")
 
 # ============================================================
-# 📈 시가총액 상위 종목 조회 API
+# 📈 시가총액 상위 종목 조회 API (수정됨)
 # ============================================================
 
 @router.get(
@@ -50,8 +50,10 @@ async def get_market_cap_top_codes(
     tlog.info(f"시가총액 상위 {top_n}개 종목 요청 (Env: {env})")
 
     try:
-        # kiwoom_api 헬퍼 호출
-        top_stocks, error_message = await get_sorted_market_cap_codes(top_n=top_n, env=env)
+        # ✅ kiwoom_api의 동기(sync) 함수를 asyncio.to_thread로 감싸 비동기 호출
+        top_stocks, error_message = await asyncio.to_thread(
+            get_sorted_market_cap_codes, top_n=top_n, env=env
+        )
 
         if error_message:
             tlog.error(f"시가총액 상위 종목 조회 실패: {error_message}")
@@ -66,7 +68,7 @@ async def get_market_cap_top_codes(
         raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
 
 # ============================================================
-# 📊 거래량 상위 종목 조회 API
+# 📊 거래량 상위 종목 조회 API (기존과 동일)
 # ============================================================
 
 @router.post("/stock/top-volume", summary="당일 거래량 상위 종목 조회 (키움 API)")
@@ -95,6 +97,7 @@ async def get_kiwoom_top_volume(
     }
 
     try:
+        # ✅ 동기(sync) 함수이므로 asyncio.to_thread 사용 (기존과 동일)
         kiwoom_result = await asyncio.to_thread(get_top_volume_stocks, data=params, env=env)
 
         if not kiwoom_result:
