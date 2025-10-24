@@ -34,32 +34,33 @@ class StockInfo(BaseModel):
 
 @router.get(
     "/stock/market-cap-top-codes",
-    summary="시가총액 상위 종목 리스트 조회 (키움 API)",
-    response_model=List[StockInfo]  # ✅ 응답 구조를 StockInfo 리스트로 지정
+    summary="[실전] 시가총액 상위 종목 리스트 조회", # [수정]
+    response_model=List[StockInfo]
 )
 async def get_market_cap_top_codes(
     top_n: int = Query(50, ge=10, le=100, description="조회할 상위 종목 개수 (10~100)"),
-    env: Literal["real", "mock"] = Query("real", description="API 환경 선택 ('real' 또는 'mock')")
+    # [삭제] env 파라미터 제거
+    # env: Literal["real", "mock"] = Query("real", description="API 환경 선택 ('real' 또는 'mock')")
 ):
     """
-    키움증권 API(ka10099)를 호출하여 코스피/코스닥 전체 종목을
+    [실전투자] 키움증권 API(ka10099)를 호출하여 코스피 종목을
     시가총액 기준으로 정렬한 후, 상위 N개 종목의 상세 정보를 반환합니다.
     """
     trace_id = new_trace_id()
     tlog = get_trace_logger(trace_id)
-    tlog.info(f"시가총액 상위 {top_n}개 종목 요청 (Env: {env})")
+    tlog.info(f"시가총액 상위 {top_n}개 종목 요청 (실전)") # [수정]
 
     try:
-        # ✅ kiwoom_api의 동기(sync) 함수를 asyncio.to_thread로 감싸 비동기 호출
+        # [수정] env 파라미터 제거
         top_stocks, error_message = await asyncio.to_thread(
-            get_sorted_market_cap_codes, top_n=top_n, env=env
+            get_sorted_market_cap_codes, top_n=top_n
         )
 
         if error_message:
             tlog.error(f"시가총액 상위 종목 조회 실패: {error_message}")
             raise HTTPException(status_code=502, detail=f"종목 조회 실패: {error_message}")
         
-        return top_stocks  # ✅ StockInfo 구조에 맞게 반환됨
+        return top_stocks
 
     except HTTPException:
         raise
@@ -68,21 +69,22 @@ async def get_market_cap_top_codes(
         raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
 
 # ============================================================
-# 📊 거래량 상위 종목 조회 API (기존과 동일)
+# 📊 거래량 상위 종목 조회 API (수정됨)
 # ============================================================
 
-@router.post("/stock/top-volume", summary="당일 거래량 상위 종목 조회 (키움 API)")
+@router.post("/stock/top-volume", summary="[실전] 당일 거래량 상위 종목 조회") # [수정]
 async def get_kiwoom_top_volume(
-    env: Literal["real", "mock"] = Query("real", description="API 환경 선택 ('real' 또는 'mock')"),
+    # [삭제] env 파라미터 제거
+    # env: Literal["real", "mock"] = Query("real", description="API 환경 선택 ('real' 또는 'mock')"),
     market_type: str = Query("000", description="시장구분 000:전체, 001:코스피, 101:코스닥"),
     sort_type: str = Query("1", description="정렬구분 1:거래량, 2:거래회전율, 3:거래대금")
 ):
     """
-    키움증권 API(ka10030)를 직접 호출하여 당일 거래량 상위 종목 데이터를 반환합니다.
+    [실전투자] 키움증권 API(ka10030)를 직접 호출하여 당일 거래량 상위 종목 데이터를 반환합니다.
     """
     trace_id = new_trace_id()
     tlog = get_trace_logger(trace_id)
-    tlog.info(f"키움 거래량 상위 요청 (Env: {env}, Market: {market_type}, Sort: {sort_type})")
+    tlog.info(f"키움 거래량 상위 요청 (실전, Market: {market_type}, Sort: {sort_type})") # [수정]
 
     params = {
         'mrkt_tp': market_type,
@@ -93,12 +95,12 @@ async def get_kiwoom_top_volume(
         'pric_tp': '0',
         'trde_prica_tp': '0',
         'mrkt_open_tp': '0',
-        'stex_tp': '1' if env == 'mock' else '3',
+        'stex_tp': '3', # [수정] '3' (실전)으로 고정
     }
 
     try:
-        # ✅ 동기(sync) 함수이므로 asyncio.to_thread 사용 (기존과 동일)
-        kiwoom_result = await asyncio.to_thread(get_top_volume_stocks, data=params, env=env)
+        # [수정] env 파라미터 제거
+        kiwoom_result = await asyncio.to_thread(get_top_volume_stocks, data=params)
 
         if not kiwoom_result:
             raise HTTPException(status_code=503, detail="증권사 API 호출 실패 (응답 없음)")
