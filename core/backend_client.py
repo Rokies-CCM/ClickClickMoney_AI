@@ -104,3 +104,128 @@ def format_consumption_for_llm(data: Dict[str, Any]) -> str:
     result = "\n".join(lines)
     log.info(f"[Format] Generated text length: {len(result)}")
     return result
+
+
+# ========== ✨ 전달 비교 함수 추가 ========== 
+async def get_consumption_comparison(
+    current_start: str,
+    current_end: str,
+    token: Optional[str] = None
+) -> str:
+    """이번 달과 전달 소비 비교 분석"""
+    
+    # 이번 달 데이터
+    current_data = await get_consumption_data(
+        start_date=current_start,
+        end_date=current_end,
+        token=token
+    )
+    
+    # 전달 계산
+    current_dt = datetime.strptime(current_start, "%Y-%m-%d")
+    prev_month = current_dt.month - 1 if current_dt.month > 1 else 12
+    prev_year = current_dt.year if current_dt.month > 1 else current_dt.year - 1
+    
+    prev_start_dt = datetime(prev_year, prev_month, 1)
+    # 전달 마지막 날
+    if prev_month == 12:
+        prev_end_dt = datetime(prev_year, 12, 31)
+    else:
+        prev_end_dt = datetime(prev_year, prev_month + 1, 1) - timedelta(days=1)
+    
+    prev_start = prev_start_dt.strftime("%Y-%m-%d")
+    prev_end = prev_end_dt.strftime("%Y-%m-%d")
+    
+    log.info(f"[Comparison] Current: {current_start} ~ {current_end}")
+    log.info(f"[Comparison] Previous: {prev_start} ~ {prev_end}")
+    
+    # 전달 데이터
+    prev_data = await get_consumption_data(
+        start_date=prev_start,
+        end_date=prev_end,
+        token=token
+    )
+    
+    # 데이터 파싱 헬퍼
+    def parse_data(data):
+        if not data or "data" not in data:
+            return {}, 0, 0
+        content = data["data"].get("content", [])
+        category_totals = defaultdict(int)
+        total = 0
+        for item in content:
+            cat = item.get("categoryName") or "기타"
+            amt = int(item.get("amount", 0))
+            category_totals[cat] += amt
+            total += amt
+        return category_totals, total, len(content)
+    
+    current_cats, current_total, current_count = parse_data(current_data)
+    prev_cats, prev_total, prev_count = parse_data(prev_data)
+    
+    # 비교 텍스트 생성
+    lines = [
+        "[이번 달 vs 전달 비교]",
+        "",
+        f"**이번 달 ({current_start[:7]})**",
+        f"- 총 지출: {current_total:,}원",
+        f"- 거래 건수: {current_count}건",
+        "",
+        f"**전달 ({prev_start[:7]})**",
+        f"- 총 지출: {prev_total:,}원",
+        f"- 거래 건수: {prev_count}건",
+        "",
+    ]
+    
+    # 증감 분석
+    if prev_total > 0:
+        diff = current_total - prev_total
+        diff_pct = (diff / prev_total) * 100
+        
+        if diff > 0:
+            lines.append(f"💡 **총 지출이 전달 대비 {diff:,}원 증가했어요 (+{diff_pct:.1f}%)**")
+        elif diff < 0:
+            lines.append(f"💡 **총 지출이 전달 대비 {abs(diff):,}원 감소했어요 ({diff_pct:.1f}%)**")
+        else:
+            lines.append("💡 **총 지출이 전달과 동일해요**")
+    
+    lines.append("")
+    lines.append("[카테고리별 변화]")
+    
+    # 카테고리별 증감
+    all_cats = set(current_cats.keys()) | set(prev_cats.keys())
+    changes = []
+    
+    for cat in all_cats:
+        curr = current_cats.get(cat, 0)
+        prev = prev_cats.get(cat, 0)
+        diff = curr - prev
+        
+        if prev > 0:
+            diff_pct = (diff / prev) * 100
+            changes.append((cat, diff, diff_pct, curr, prev))
+        elif curr > 0:
+            changes.append((cat, diff, 0, curr, prev))
+    
+    # 변화량 큰 순으로 정렬
+    changes.sort(key=lambda x: abs(x[1]), reverse=True)
+    
+    for cat, diff, diff_pct, curr, prev in changes[:5]:  # 상위 5개만
+        if diff > 0:
+            lines.append(f"- {cat}: {curr:,}원 (전달 {prev:,}원, +{diff:,}원 ↑{diff_pct:.1f}%)")
+        elif diff < 0:
+            lines.append(f"- {cat}: {curr:,}원 (전달 {prev:,}원, {diff:,}원 ↓{abs(diff_pct):.1f}%)")
+        else:
+            lines.append(f"- {cat}: {curr:,}원 (전달과 동일)")
+    
+    # 이번 달 현황 추가
+    lines.append("")
+    lines.append("[이번 달 현황]")
+    sorted_current = sorted(current_cats.items(), key=lambda x: x[1], reverse=True)
+    for cat, amt in sorted_current:
+        pct = (amt / current_total * 100) if current_total > 0 else 0
+        lines.append(f"{cat}: {amt:,}원 ({pct:.1f}%)")
+    
+    result = "\n".join(lines)
+    log.info(f"[Format] Comparison text length: {len(result)}")
+    return result

@@ -454,8 +454,10 @@ async def chat(req: Request):
             "error": {"code": "BAD_REQUEST", "message": "question is required", "trace_id": trace_id}
         })
 
-    # ========== 소비 분석 기능 (AI 기반 강화 버전) ==========
+    # ========== 소비 분석 기능 (전달 비교 포함) ==========
     consumption_keywords = ["소비", "지출", "돈", "얼마", "쓴", "spending", "expense"]
+    comparison_keywords = ["비교", "대비", "전달", "지난달", "변화", "차이"]
+    
     if any(kw in question for kw in consumption_keywords):
         log.info(f"[Consumption] Detected consumption question")
 
@@ -463,40 +465,190 @@ async def chat(req: Request):
         auth_header = req.headers.get("authorization", "")
         token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
 
-        # 날짜 추출
+        # 날짜 추출 (두 달 비교 지원)
         def extract_dates_from_question(q: str) -> tuple:
             today = datetime.now()
-            m = re.search(r'(\d{1,2})월', q)
-            if m:
-                month = int(m.group(1))
+            
+            # "X월과 Y월 비교" 또는 "X월 Y월 비교" 패턴 찾기
+            two_months = re.findall(r'(\d{1,2})월', q)
+            
+            if len(two_months) >= 2:
+                # 두 달이 명시된 경우
+                month1 = int(two_months[0])
+                month2 = int(two_months[1])
+                
+                # 더 최근 달이 current, 이전 달이 previous
+                if month1 > month2:
+                    current_month, prev_month = month1, month2
+                else:
+                    current_month, prev_month = month2, month1
+                
+                # 연도 계산 (올해 기준)
+                current_year = today.year if current_month <= today.month else today.year - 1
+                prev_year = today.year if prev_month <= today.month else today.year - 1
+                
+                # 날짜 범위 계산
+                current_start = datetime(current_year, current_month, 1).strftime("%Y-%m-%d")
+                if current_month == 12:
+                    current_end = datetime(current_year, 12, 31).strftime("%Y-%m-%d")
+                else:
+                    current_end = (datetime(current_year, current_month + 1, 1) - timedelta(days=1)).strftime("%Y-%m-%d")
+                
+                prev_start = datetime(prev_year, prev_month, 1).strftime("%Y-%m-%d")
+                if prev_month == 12:
+                    prev_end = datetime(prev_year, 12, 31).strftime("%Y-%m-%d")
+                else:
+                    prev_end = (datetime(prev_year, prev_month + 1, 1) - timedelta(days=1)).strftime("%Y-%m-%d")
+                
+                return current_start, current_end, prev_start, prev_end
+            
+            elif len(two_months) == 1:
+                # 한 달만 명시된 경우
+                month = int(two_months[0])
                 year = today.year if month <= today.month else today.year - 1
                 start = datetime(year, month, 1)
                 end = (datetime(year, month + 1, 1) - timedelta(days=1)) if month < 12 else datetime(year, 12, 31)
-                return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+                return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), None, None
+            
+            # "이번" 키워드
             if "이번" in q:
                 start = datetime(today.year, today.month, 1)
-                return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+                return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), None, None
+            
+            # 기본값: 최근 30일
             start = today - timedelta(days=30)
-            return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+            return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), None, None
 
-        start_date, end_date = extract_dates_from_question(question)
-        log.info(f"[Consumption] Date range: {start_date} ~ {end_date}")
-
+        date_result = extract_dates_from_question(question)
+        
+        # 비교 요청 여부 확인
+        is_comparison = any(kw in question for kw in comparison_keywords)
+        
         try:
-            #  백엔드 소비 데이터 가져오기
-            data = await get_consumption_data(
-                start_date=start_date,
-                end_date=end_date,
-                token=token
-            )
-
-            if not data or "data" not in data:
-                error_msg = "소비 데이터를 불러올 수 없습니다. 로그인 또는 서버 연결을 확인해주세요."
+            if len(date_result) == 4 and date_result[2] is not None:
+                # 두 달이 명시된 경우 (자동 비교)
+                current_start, current_end, prev_start, prev_end = date_result
+                is_comparison = True
+                log.info(f"[Consumption] Manual comparison: {current_start}~{current_end} vs {prev_start}~{prev_end}")
+                
+                # 두 달 데이터 직접 가져오기
+                from core.backend_client import get_consumption_data, format_consumption_for_llm
+                from collections import defaultdict
+                
+                current_data = await get_consumption_data(
+                    start_date=current_start,
+                    end_date=current_end,
+                    token=token
+                )
+                
+                prev_data = await get_consumption_data(
+                    start_date=prev_start,
+                    end_date=prev_end,
+                    token=token
+                )
+                
+                # 데이터 파싱
+                def parse_data(data):
+                    if not data or "data" not in data:
+                        return {}, 0, 0
+                    content = data["data"].get("content", [])
+                    category_totals = defaultdict(int)
+                    total = 0
+                    for item in content:
+                        cat = item.get("categoryName") or "기타"
+                        amt = int(item.get("amount", 0))
+                        category_totals[cat] += amt
+                        total += amt
+                    return category_totals, total, len(content)
+                
+                current_cats, current_total, current_count = parse_data(current_data)
+                prev_cats, prev_total, prev_count = parse_data(prev_data)
+                
+                # 비교 텍스트 생성
+                lines = [
+                    f"[{current_start[:7]} vs {prev_start[:7]} 비교]",
+                    "",
+                    f"**{current_start[:7]}**",
+                    f"- 총 지출: {current_total:,}원",
+                    f"- 거래 건수: {current_count}건",
+                    "",
+                    f"**{prev_start[:7]}**",
+                    f"- 총 지출: {prev_total:,}원",
+                    f"- 거래 건수: {prev_count}건",
+                    "",
+                ]
+                
+                # 증감 분석
+                if prev_total > 0:
+                    diff = current_total - prev_total
+                    diff_pct = (diff / prev_total) * 100
+                    
+                    if diff > 0:
+                        lines.append(f"💡 총 지출이 {diff:,}원 증가했어요 (+{diff_pct:.1f}%)")
+                    elif diff < 0:
+                        lines.append(f"💡 총 지출이 {abs(diff):,}원 감소했어요 ({diff_pct:.1f}%)")
+                    else:
+                        lines.append("💡 총 지출이 동일해요")
+                
+                lines.append("")
+                lines.append("[카테고리별 변화]")
+                
+                # 카테고리별 증감
+                all_cats = set(current_cats.keys()) | set(prev_cats.keys())
+                changes = []
+                
+                for cat in all_cats:
+                    curr = current_cats.get(cat, 0)
+                    prev = prev_cats.get(cat, 0)
+                    diff = curr - prev
+                    
+                    if prev > 0:
+                        diff_pct = (diff / prev) * 100
+                        changes.append((cat, diff, diff_pct, curr, prev))
+                    elif curr > 0:
+                        changes.append((cat, diff, 0, curr, prev))
+                
+                changes.sort(key=lambda x: abs(x[1]), reverse=True)
+                
+                for cat, diff, diff_pct, curr, prev in changes[:5]:
+                    if diff > 0:
+                        lines.append(f"- {cat}: {curr:,}원 (이전 {prev:,}원, +{diff:,}원 ↑{diff_pct:.1f}%)")
+                    elif diff < 0:
+                        lines.append(f"- {cat}: {curr:,}원 (이전 {prev:,}원, {diff:,}원 ↓{abs(diff_pct):.1f}%)")
+                    else:
+                        lines.append(f"- {cat}: {curr:,}원 (동일)")
+                
+                formatted_data = "\n".join(lines)
+                
             else:
-                # 데이터 텍스트 변환
-                formatted_data = format_consumption_for_llm(data)
+                # 한 달만 명시된 경우
+                start_date, end_date = date_result[0], date_result[1]
+                log.info(f"[Consumption] Date range: {start_date} ~ {end_date}")
+                
+                if is_comparison:
+                    # 전달 비교 분석
+                    from core.backend_client import get_consumption_comparison
+                    formatted_data = await get_consumption_comparison(
+                        current_start=start_date,
+                        current_end=end_date,
+                        token=token
+                    )
+                else:
+                    # 일반 소비 분석
+                    data = await get_consumption_data(
+                        start_date=start_date,
+                        end_date=end_date,
+                        token=token
+                    )
+                    
+                    if not data or "data" not in data:
+                        answer = "소비 데이터를 불러올 수 없습니다. 로그인 또는 서버 연결을 확인해주세요."
+                        formatted_data = ""
+                    else:
+                        formatted_data = format_consumption_for_llm(data)
 
-                # AI 분석 프롬프트 생성
+            # AI 분석 (비교 데이터 또는 일반 데이터)
+            if formatted_data:
                 analysis_prompt = f"""
 당신은 개인 재정 분석가이자 절약 코치입니다.
 다음은 사용자의 실제 소비 데이터입니다.
@@ -508,14 +660,20 @@ async def chat(req: Request):
 질문: "{question}"
 
 위 데이터를 기반으로 다음을 분석해 주세요.
-- 사용자가 가장 많이 쓴 지출 카테고리
-- 해당 항목이 높은 이유 추정
-- 절약을 위한 구체적인 제안 2~3가지
-- 필요하다면 최근 거래를 예로 들어 설명
+
+**중요**: 
+- "총 지출"과 "카테고리별 지출" 섹션의 금액을 정확히 사용하세요
+- "최근 거래" 섹션은 개별 거래 내역일 뿐, 카테고리 총액이 아닙니다
+- 예: 식비 총액은 108,300원이지, 최근 거래의 16,800원이 아닙니다
+- 비교 데이터가 있다면 증감 패턴을 정확히 언급하세요
+
+분석 내용:
+1. 사용자가 가장 많이 쓴 지출 카테고리와 금액 (정확한 숫자 사용)
+2. {"비교 분석 및 변화 이유" if is_comparison else "해당 항목이 높은 이유 추정"}
+3. 절약을 위한 구체적인 제안 2~3가지
 
 출력은 간결하고 자연스러운 한국어 문장으로 해주세요.
 """
-
                 
                 choice = choose_model(question, formatted_data)
                 provider_name, model_name, model_client = choice.name, choice.model, choice.client
@@ -523,8 +681,9 @@ async def chat(req: Request):
                     analysis_prompt, "", "", "", chat_history=[]
                 )
                 
-
                 answer = result.strip()
+            else:
+                answer = "소비 데이터를 분석할 수 없습니다."
 
             # 스트리밍 응답 (SSE)
             if payload.stream:
@@ -533,11 +692,15 @@ async def chat(req: Request):
                         yield f"data: {ch}\n\n"
 
                     meta = {
-                        "provider": "consumption_ai_analysis",
-                        "model": "gpt-4o-mini",
-                        "usage": {"prompt_tokens": 0, "completion_tokens": len(answer), "total_tokens": len(answer)},
+                        "provider": "consumption_analysis",
+                        "model": model_name,
+                        "usage": {
+                            "prompt_tokens": 0,
+                            "completion_tokens": len(answer),
+                            "total_tokens": len(answer)
+                        },
                         "source_buttons": [],
-                        "chat_history": chat_history
+                        "chat_history": []
                     }
                     yield f"event: done\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
                     yield "event: end\ndata: [DONE]\n\n"
@@ -565,7 +728,7 @@ async def chat(req: Request):
                     yield "event: end\ndata: [DONE]\n\n"
                 return StreamingResponse(err_stream(), media_type="text/event-stream")
             return {"answer": err}
-    # ========== 소비 분석 끝 (AI 강화 버전) ==========
+    # ========== 소비 분석 끝 ==========
 
 
     # facts → context
