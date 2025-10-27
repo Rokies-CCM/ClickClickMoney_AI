@@ -524,6 +524,7 @@ async def chat(req: Request):
         
         # 비교 요청 여부 확인
         is_comparison = any(kw in question for kw in comparison_keywords)
+        model_name = "gpt-4o-mini"
         
         try:
             if len(date_result) == 4 and date_result[2] is not None:
@@ -687,7 +688,7 @@ async def chat(req: Request):
 
             # 스트리밍 응답 (SSE)
             if payload.stream:
-                async def consumption_stream():
+                async def consumption_stream(model_name_local: str):
                     for ch in answer:
                         yield f"data: {ch}\n\n"
 
@@ -706,7 +707,7 @@ async def chat(req: Request):
                     yield "event: end\ndata: [DONE]\n\n"
 
                 return StreamingResponse(
-                    consumption_stream(),
+                    consumption_stream(model_name),
                     media_type="text/event-stream",
                     headers={
                         "Cache-Control": "no-cache",
